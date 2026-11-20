@@ -1,40 +1,33 @@
 # Virtual SSD Test Shell
 
-텍스트 파일을 NAND 메모리처럼 사용하는 **가상 SSD**와, 이를 명령어로 검증하는 **Test Shell**을 C로 구현한 프로젝트입니다.
+C로 SSD 컨트롤러의 **LBA 단위 읽기와 쓰기**를 구현한 프로젝트입니다. txt 파일로 NAND를 흉내 낸 **가상 SSD**와, 이를 검증하는 **Test Shell** 및 자동 테스트 스크립트로 구성됩니다.
 
 - 과정: SSAFY 16기 임베디드 트랙, 임베디드 C언어
 - 인원: 1명 (과제는 2인 1조였지만 설계부터 테스트까지 혼자 진행)
-- 언어 / 환경: C, Windows, Eclipse CDT
+- 사용 기술: C언어, 파일 I/O, 프로세스 호출(Test Shell에서 `ssd` 실행), 입력 유효성 검사, 테스트 자동화
+- 환경: Windows, Eclipse CDT
 
 ---
 
-## 1. 구조와 동작 흐름
+## 1. 내가 맡은 역할
+
+1. **nand.txt 저장 형식 설계**: 100줄로 만들어 줄 번호가 곧 LBA가 되게 했고, 임시 파일에 먼저 쓴 뒤 바꿔치기하는 방식으로 저장했습니다.
+2. **Test Shell 구현**: 명령을 반복해서 받는 셸을 만들고, `system()`으로 `ssd`를 실행해 종료 코드로 성공 여부를 판단했습니다.
+3. **이중 입력 검증**: 셸과 SSD 양쪽에서 입력을 한 번씩 검증했습니다.
+4. **테스트 시나리오**: `testapp1`과 `testapp2` 테스트 시나리오를 구현했습니다.
+
+---
+
+## 2. 구조와 동작 흐름
 
 ![구조와 동작 흐름](docs/images/architecture.png)
 
-- `ssd.exe`: 한 번 실행할 때 명령 하나(`W` 또는 `R`)를 처리하는 가상 SSD
-- `TestShell.exe`: 사용자 명령을 받아 `ssd.exe`를 실행하고, **종료 코드**와 **result.txt**로 결과를 받는 셸
-- `nand.txt`: SSD의 NAND 메모리 역할 (Write 결과 저장)
-- `result.txt`: 마지막 Read 결과 한 줄
-
----
-
-## 2. 내가 맡은 역할 (1인 전담)
-
-**가상 SSD (`src/ssd.c`)**
-- `ssd W [LBA] [값]`, `ssd R [LBA]` 명령행 인터페이스와 종료 코드(0/1) 설계
-- nand.txt 저장 형식 설계: 100줄, 줄 번호 = LBA, 안 쓴 칸은 `0x00000000`
-- 임시 파일(`nand.txt.tmp`)에 먼저 쓰고 교체하는 저장 방식 구현
-
-**Test Shell (`src/TestShell.c`)**
-- `write / read / fullwrite / fullread / testapp1 / testapp2 / help / exit` 명령 처리
-- `system()`으로 ssd.exe 실행, 종료 코드와 result.txt로 결과 수신
-
-**입력 검증**
-- 셸과 SSD 양쪽에서 LBA와 값 형식을 이중 검증, 잘못된 입력은 `INVALID COMMAND`
-
-**테스트 시나리오**
-- testapp1(전체 쓰기 후 비교), testapp2(반복 쓰기, 덮어쓰기 후 비교)
+| 구성 | SSD 구조에서의 역할 | 설명 |
+|---|---|---|
+| `TestShell` (`src/TestShell.c`) | 호스트 | 사용자 명령을 받아 `ssd`를 실행하고, 종료 코드와 `result.txt`로 결과를 받음 |
+| `ssd` (`src/ssd.c`) | 컨트롤러 | 한 번 실행할 때 명령 하나(`W` 또는 `R`)를 처리 |
+| `nand.txt` | NAND | 100줄, 줄 번호 = LBA |
+| `result.txt` | 읽기 결과 | 마지막 Read 결과 한 줄 |
 
 ---
 
@@ -85,31 +78,68 @@
 
 ---
 
-## 4. 어려웠던 문제
+## 4. 어려웠던 문제와 해결 과정
 
-<!-- TODO: 직접 작성 -->
-(작성 예정)
+**어려웠던 점**
+구분자를 기준으로 문자열을 파싱할 때, Python의 `split()`은 나눈 결과를 리스트로 바로 돌려주지만 C의 `strtok()`은 호출할 때마다 토큰을 하나씩만 돌려줍니다. 그래서 명령어 문자열(`write 3 0xAAAABBBB`)을 인자별로 나누는 데 어려움을 겪었습니다.
+
+**원인 분석**
+`strtok()`의 동작 방식을 이해하지 못했던 것이 원인이었습니다.
+- 첫 호출에는 원본 문자열을 넘기고, 이후에는 `NULL`을 넘겨야 이전 위치부터 이어서 자릅니다. 함수 내부에 다음 시작 위치를 기억하기 때문입니다.
+- 새 배열을 만드는 것이 아니라 원본 문자열의 구분자 자리를 `'\0'`으로 바꾸고, 각 토큰의 시작 주소(포인터)를 돌려줍니다.
+
+**해결**
+`while`문으로 `strtok()`이 `NULL`을 돌려줄 때까지 반복하면서, 돌려받은 포인터를 `char*` 배열에 차례로 저장했습니다. 그 결과 Python의 `split()`처럼 인자 배열을 만들고 인자 개수까지 함께 셀 수 있게 되었습니다.
+
+```c
+/* src/TestShell.c */
+int parseInput(char *input, char *args[], int maxArgs)
+{
+    int count = 0;
+    char *token = strtok(input, " \t\r\n");
+
+    while (token != NULL) {
+        if (count >= maxArgs)
+            return -1;
+
+        args[count++] = token;
+        token = strtok(NULL, " \t\r\n");
+    }
+
+    return count;
+}
+```
 
 ---
 
 ## 5. 결과
 
-![실행 결과](docs/images/result_screenshot.jpg)
+### 정상 기능 PASS
 
-- `write 3 0xAAAABBBB` → `read 3` = `0xAAAABBBB`
-- `fullwrite 0xABCDFFFF` → `read 3` = `0xABCDFFFF`
-- **testapp1 PASS, testapp2 PASS**
-- testapp2 후 `read 0` = `0x12345678`(덮어쓴 범위), `read 6` = `0xABCDFFFF`(범위 밖은 그대로)
-- 잘못된 입력은 모두 `INVALID COMMAND`로 처리되고 프로그램이 종료되지 않음
+![정상 기능 결과](docs/images/result_normal.png)
+
+- `write 3 0xAAAABBBB` → `read 3`: Test Shell이 `ssd W 3 0xAAAABBBB`를 실행하면 nand.txt의 3번 줄(LBA 3)에 값이 저장됩니다. `read 3`은 `ssd R 3`을 실행해 그 줄을 result.txt에 쓰고, Test Shell이 그 파일을 읽어 화면에 출력합니다. 같은 값이 나오면 쓰기와 읽기가 맞게 동작한 것입니다.
+- `fullwrite 0xABCDFFFF` → `read 50`: LBA 0부터 99까지 모두 같은 값을 쓰기 때문에, 아무 칸(50번)을 읽어도 그 값이 나옵니다.
+- **testapp1 PASS**: 전체 쓰기를 한 뒤 100칸을 모두 읽어서 쓴 값과 하나씩 비교합니다. 하나도 다르지 않아서 PASS.
+- **testapp2 PASS**: LBA 0~5에 `0xAAAABBBB`를 30번 쓰고, `0x12345678`로 한 번 덮어쓴 뒤 읽습니다. 마지막에 쓴 값(`0x12345678`)이 그대로 읽혀서 PASS. 같은 칸을 여러 번 써도 마지막 값이 정확히 남는다는 것을 확인했습니다.
+
+### 입력 검증
+
+![입력 검증 결과](docs/images/result_validation.png)
+
+- `read 100`: `validLBA()`에서 걸립니다. 길이가 2자리를 넘으면 거부하고(`strlen(str) > 2`), 숫자도 0~99 범위여야 합니다. `"100"`은 3자리라 여기서 바로 실패합니다.
+- `write 3 0x123`: `validValue()`는 값의 길이가 정확히 10자(`0x` + 16진수 8자리)여야 통과시킵니다. `"0x123"`은 5자라서 실패합니다.
+- `write 3 0xabcdffff`: 길이는 10자로 맞지만, 각 자리가 `'0'~'9'` 또는 대문자 `'A'~'F'`인지만 확인합니다. 소문자 a~f는 허용하지 않아서 실패합니다.
+- `hello`: 등록된 명령(`write`, `read`, `fullwrite` 등)과 `strcmp`로 비교했을 때 일치하는 것이 없어서 `INVALID COMMAND`가 나옵니다.
 
 ---
 
 ## 6. 배운 점
 
-- **프로세스 분리와 통신**: 테스트 도구와 테스트 대상을 별도 프로그램으로 나누고, 종료 코드와 파일로 결과를 주고받는 구조를 직접 설계했습니다.
-- **파일 입출력으로 저장 장치 흉내 내기**: `fopen / fprintf / fscanf / remove / rename`으로 저장 형식을 정하고, 저장 도중 실패에 대비하는 방법을 고민했습니다. Windows의 `rename()`은 대상 파일이 있으면 실패해서 먼저 지워야 했고, 그 사이에 위험 구간이 남는다는 점도 알게 됐습니다.
-- **방어적 입력 처리**: `fgets`, `strtok`, `isdigit`, 폭을 지정한 `fscanf("%10s")`로 길이와 형식을 먼저 검증해 잘못된 입력에도 죽지 않는 셸을 만들었습니다.
-- **자동 테스트**: 반복 쓰기와 덮어쓰기 같은 패턴을 testapp으로 만들어 PASS/FAIL로 판정했습니다.
+1. **입력 파싱과 예외 처리**: `strtok`, `strcmp`, `isdigit` 등으로 명령을 해석하고, LBA 범위와 16진수 형식을 검증해서 어떤 입력에도 segfault가 나지 않게 했습니다.
+2. **SSD 구조 이해**: 호스트(Test Shell), 컨트롤러(ssd), NAND(nand.txt)로 역할을 나누고 LBA 단위로 읽고 쓰는 흐름을 구현했습니다.
+3. **검증 관점의 테스트 자동화**: testapp1과 testapp2로 쓰고 읽어서 비교하는 검증 스크립트를 만들었습니다. 스토리지 회사의 검증 직무와 직접 연결되는 경험입니다.
+4. **C 표준 라이브러리 문자열 함수**: `fgets`, `strtok`, `strcmp`, `isdigit`, `atoi`로 명령어를 파싱하면서 각 함수의 동작 방식을 익혔습니다.
 
 ---
 
