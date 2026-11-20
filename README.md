@@ -128,7 +128,7 @@ read 3 입력
 | `fullwrite [값]` | LBA 0~99에 차례로 `ssd W` 100회 실행. 중간에 실패하면 멈춘다 |
 | `fullread` | LBA 0~99를 차례로 읽어 `LBA n : 값` 형식으로 출력 |
 | `testapp1` | `0xABCDFFFF` 전체 쓰기 → 100칸을 읽어 비교 → `PASS`/`FAIL` |
-| `testapp2` | LBA 0~5에 `0xAAAABBBB` 쓰기를 5회 반복(총 30회) → `0x12345678`로 덮어쓰기 → LBA 0~5를 읽어 비교 → `PASS`/`FAIL` |
+| `testapp2` | LBA 0\~5에 `0xAAAABBBB` 쓰기를 5회 반복(총 30회) → `0x12345678`로 덮어쓰기 → LBA 0\~5를 읽어 비교 → `PASS`/`FAIL` |
 | `help` | 명령 목록 출력 |
 | `exit` | 종료 (입력이 EOF로 끝나도 종료) |
 
